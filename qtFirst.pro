@@ -3,8 +3,9 @@ CONFIG += console c++11
 CONFIG -= app_bundle
 CONFIG -= qt
 
-SOURCES += main.cpp \
-    chunk.cpp
+SOURCES += main.cpp
 
 HEADERS += \
     chunk.h
+
+LIBS+= -lGL -lGLU -lglut
