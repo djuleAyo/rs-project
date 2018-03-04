@@ -1,0 +1,6 @@
+done:
+implemented isVisibleBlock, and visibleBlocks members in Chunk.h
+
+TODO:
+test isVisibleBlock and visibleBlocks by visual check
+to do visual check implement minimal part of game class and gameplay(movement)

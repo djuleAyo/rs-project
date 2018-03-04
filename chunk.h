@@ -44,7 +44,7 @@ public:
   // lets not seperate 1 coord index in operator [] and still use ()
   // disallow changing. Use only for reading
   const T operator()(int index) const;
-  const T operator()(int x, int y, int z, CoordType t = CoordType::WORLD) const;
+  const T operator()(int x, int y, int z, CoordType t) const;
 
   //VISIBLES
 
@@ -57,8 +57,9 @@ public:
    * has method that can compute it
    */
 
-  // this is vector of coords!
-  void visibleBlocks(std::vector<short> &blocks_out);
+  bool isVisibleBlock(int x, int y, int z, CoordType t) const;
+  // this is vector of coords blocktype quadruples
+  std::vector<short> &visibleBlocks(std::vector<short> &blocks_out, CoordType t);
   // for visible faces return vector of bit flags coord quadruples
   // for easy bit flag manipulation use std14
   void visibleFaces(std::vector<unsigned short> &faces_out);
@@ -94,9 +95,10 @@ private:
 
 //since we are using template class we must define here
 //still, define outside of the class def so interface is more visible
+//or faster but harder to maintain use 3 files to menage a template
 
 
-///////////////////////////////////////////////////////////////////////////////
+///////////////////////////IMPLEMENTATION//////////////////////////////////////
 
 
 
@@ -109,8 +111,11 @@ Chunk<T, dim>::Chunk(int x, int y, int z)
   //dummy init of chunk set some blocks
   for(int i = 0; i < p_blocks.size(); i++)
     {
-      //if(i % 2 == 0)
+      //if(i % 4 == 0)
         p_blocks[i] = BlockType::EARTH;
+      /*else
+        p_blocks[i] = BlockType::AIR;
+        */
     }
 }
 
@@ -135,6 +140,7 @@ short Chunk<T, dim>::originZ() const
 
 // lets not seperate 1 coord index in operator [] and still use ()
 // disallow changing. Use only for reading
+
 template <class T, short dim>
 const T Chunk<T, dim>::operator()(int index) const
 {
@@ -145,13 +151,22 @@ const T Chunk<T, dim>::operator()(int index) const
   return p_blocks[index];
 }
 
-/*
 template <class T, short dim>
-const T Chunk<T, dim>::operator()(int x, int y,int z,
-                          CoordType t = CoordType::WORLD) const
+const T Chunk<T, dim>::operator()(int x, int y,int z, CoordType t) const
 {
   if(t != CoordType::LOCAL)
-    throw "World coords currently not supported";
+    {
+      //check if given coords belong to this chunk
+      if(x < p_originX || x > p_originX + s_dim
+         || y < p_originY || y > p_originY + s_dim
+         || z < p_originZ || z > p_originZ + s_dim
+         )
+        throw "Given world coords are not part of this chunk";
+      return p_blocks[x + p_originX
+          + (y + p_originY) * s_dim
+          + (z + p_originZ) * s_dim * s_dim
+          ];
+    }
 
   if(x < 0 || x > s_dim
      || y < 0 || y > s_dim
@@ -160,7 +175,7 @@ const T Chunk<T, dim>::operator()(int x, int y,int z,
     throw "Out of bounds call on chunk";
   return p_blocks[x + y * s_dim + z * s_dim * s_dim];
 }
-*/
+
 //VISIBLES
 
 /* Which blocks are visible is dependent on observation.
@@ -171,12 +186,74 @@ const T Chunk<T, dim>::operator()(int x, int y,int z,
  * testings. Summary: the class doesn't have visible vector member but
  * has method that can compute it
  */
-
-// this is vector of coords!
 template<class T, short dim>
-void Chunk<T, dim>::visibleBlocks(std::vector<short> &blocks_out)
+bool Chunk<T, dim>::isVisibleBlock(int x, int y, int z, CoordType t) const
 {
+  //normalize coords
+  if(t == CoordType::WORLD)
+    {
+      x = x - p_originX;
+      y = y - p_originY;
+      z = z - p_originZ;
+    }
+  //all limiting blocks are visible
+  if(x == 0 || x == s_dim - 1
+     || y == 0 || y == s_dim - 1
+     || z == 0 || z == s_dim - 1
+     )
+    return true;
+  //check if any neighbour is AIR - here this is not limiting block so check 4 sides
+  if(operator()(x + 1, y, z, CoordType::LOCAL) == BlockType::AIR) return true;
+  if(operator()(x - 1, y, z, CoordType::LOCAL) == BlockType::AIR) return true;
+  if(operator()(x, y + 1, z, CoordType::LOCAL) == BlockType::AIR) return true;
+  if(operator()(x, y - 1, z, CoordType::LOCAL) == BlockType::AIR) return true;
+  if(operator()(x, y, z + 1, CoordType::LOCAL) == BlockType::AIR) return true;
+  if(operator()(x, y, z - 1, CoordType::LOCAL) == BlockType::AIR) return true;
 
+  //since all methods for visible failed
+  return false;
+}
+
+// this is vector of coords block type quadruples
+template<class T, short dim>
+std::vector<short> &Chunk<T, dim>::visibleBlocks(std::vector<short> &blocks_out,
+                                                 CoordType t)
+{
+  for(int x = 0; x < s_dim; x++)
+    {
+      for(int y = 0; y < s_dim; y++)
+        {
+          for(int z = 0; z < s_dim; z++)
+            {
+              if(isVisibleBlock(x, y, z, CoordType::LOCAL))
+                {
+                  if(t == CoordType::LOCAL)
+                    {
+                      blocks_out.push_back(x);
+                      blocks_out.push_back(y);
+                      blocks_out.push_back(z);
+                      blocks_out.push_back(static_cast<short>(
+                        //unoptimal since we know that given block is in bounds
+                        //so check that () does is not needed
+                        *this(x, y, z, CoordType::LOCAL)
+                      ));
+                    }
+                  else
+                    {
+                      blocks_out.push_back(x + p_originX);
+                      blocks_out.push_back(y + p_originY);
+                      blocks_out.push_back(z + p_originZ);
+                      blocks_out.push_back(static_cast<short>(
+                        //unoptimal since we know that given block is in bounds
+                        //so check that () does is not needed
+                        *this(x, y, z, CoordType::LOCAL)
+                      ));
+                    }
+                }
+
+            }
+        }
+    }
 }
 // for visible faces return vector of bit flags coord quadruples
 // for easy bit flag manipulation use std14
